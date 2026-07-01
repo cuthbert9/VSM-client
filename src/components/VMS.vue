@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { scheduleVisit } from '../Services/visitsService'
 import axios from 'axios'
 
+
 const offices = ref([
   { id: 1, name: 'Main HQ - Executive Suite (Room 401)' },
   { id: 2, name: 'Research & Development Lab (Room 102)' },
@@ -53,11 +54,10 @@ const submitVisitForm = async (form :any) => {
   try {
     
 
-      const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/Visits`,form.value)
-      
+      const response = axios.post("http://localhost:5207/api/Visits",form.value)      
 
     // success only here
-       if(response.status === 200) {
+       if(response) {
          formSubmittedData.value = response
     showSuccessModal.value = true
        }
