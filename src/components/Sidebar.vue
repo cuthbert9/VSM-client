@@ -22,7 +22,6 @@
         <!-- Schedule Visit -->
         <li>
           <button
-            @click="scheduleVisit"
             class="w-full flex items-center gap-4 px-4 py-4 rounded-2xl
                  bg-gray-600   text-black font-medium
                    hover:bg-gray-500 transition"
@@ -44,7 +43,6 @@
         <!-- Follow Up -->
         <li>
           <button
-            @click="followUp"
             class="w-full flex items-center gap-4 px-4 py-4 rounded-2xl
                    text-black hover:bg-gray-500 transition"
           >
@@ -64,7 +62,6 @@
         <!-- Parking Reservation -->
         <li>
           <button
-            @click="parkingReservation"
             class="w-full flex items-center gap-4 px-4 py-4 rounded-2xl
                    text-black hover:bg-gray-500 transition"
           >
@@ -97,17 +94,12 @@
 
 <script setup lang="ts">
 
-const scheduleVisit = () => {
-  console.log('Schedule Visit')
-}
+import {ref} from 'vue'
 
-const followUp = () => {
-  console.log('Follow Up')
-}
 
-const parkingReservation = () => {
-  console.log('Parking Reservation')
-}
+const activelink = ref('schedule')
+
+
 
 </script>
 

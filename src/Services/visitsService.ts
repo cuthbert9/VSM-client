@@ -1,22 +1,15 @@
-export interface VisitData {
-  visitorName: string;
-  visitorEmail: string;
-  visitorPhone?: string;
-  visitorCompany?: string;
-  officeId: string | number;
-  visitDate: string;
-  expectedArrival?: string;
-  purpose?: string;
-  attachmentUrl?: string;
-  reserveParking: boolean;
-  parkingSpotPreference?: string;
-  vehiclePlate?: string;
+import axios from "axios";
+
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+export  const scheduleVisit=async(visit:any)=>{
+    try {
+        const response=await axios.post(`${API_BASE_URL}/Visits`,visit)
+        return response.data
+    } catch (error) {
+        console.error("Error scheduling visit:", error)
+        throw error
+    }
 }
 
-export const scheduleVisit = async (visitData: VisitData): Promise<VisitData> => {
-  // Simulate API latency/delay
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  return {
-    ...visitData,
-  };
-};
