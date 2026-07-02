@@ -173,15 +173,15 @@ const resetForm = () => {
       <div class="space-y-6">
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
           <div class="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <h2 class="text-lg font-bold text-slate-800">Photo Attachment</h2>
+            <h2 class="text-lg font-bold text-slate-800">Attachment</h2>
           </div>
 
           <div class="space-y-2">
             <div class="flex items-center justify-center w-full">
               <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition duration-150">
                 <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                  <p class="mb-1 text-sm text-slate-500"><span class="font-semibold">Click to upload</span> photo</p>
-                  <p class="text-[10px] text-slate-400">JPG, PNG up to 10MB</p>
+                  <p class="mb-1 text-sm  text-slate-500"><span class="font-semibold">Click to upload</span> </p>
+                  <p class="text-[10px] text-slate-400">PDF ,JPG, PNG </p>
                 </div>
                 <input type="file" class="hidden" accept="image/*" @change="handleFileUpload" />
               </label>
@@ -204,6 +204,79 @@ const resetForm = () => {
           </button>
         </div>
       </div>
+    </form>
+
+
+
+    <form  class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div class="lg:col-span-2 space-y-6">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div class="flex items-center gap-2 pb-3 border-b border-slate-100">
+            <h2 class="text-lg font-bold text-slate-800">Schedule a Visit </h2>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Office  *</label>
+              <input
+               
+                type="text"
+                required
+                placeholder="e.g. 14rd Floor,Mag"
+                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Phone *</label>
+              <input
+               
+                type="tel"
+                required
+                placeholder="e.g. 0799993999"
+                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Visit Date  *</label>
+              <input               
+                type="date"
+                required
+                placeholder="e.g. NIDA-123456782"
+                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Expected Arrival </label>
+              <input
+              
+                type="time"
+                placeholder=""
+                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Visit Purpose </label>
+              <input
+                
+                type="text"
+                placeholder="Registration follow-up"
+                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Photo URL</label>
+              <input
+               
+                type="url"
+                placeholder="https://example.com/photos/jane-visitor.jpg"
+                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+    
     </form>
 
     <div v-if="showSuccessModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-opacity">
