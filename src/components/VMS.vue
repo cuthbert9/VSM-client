@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import axios from 'axios'
 
+import { supabase} from "../lib/supabase.ts"
+
 const form = ref({
   fullName: '',
   phone: '',
@@ -17,14 +19,61 @@ const attachmentName = ref('')
 const formSubmittedData = ref<any>(null)
 const submitError = ref('')
 
-const handleFileUpload = (event: Event) => {
+
+
+// const handleFileUpload = (event: Event) => {
+//   const target = event.target as HTMLInputElement
+//   if (target.files && target.files[0]) {
+//     const file = target.files[0]
+//     attachmentName.value = file.name
+//     form.value.photoUrl = `https://example.com/photos/${encodeURIComponent(file.name)}`
+//   }
+// }
+
+
+
+const handleFileUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement
-  if (target.files && target.files[0]) {
-    const file = target.files[0]
-    attachmentName.value = file.name
-    form.value.photoUrl = `https://example.com/photos/${encodeURIComponent(file.name)}`
+
+  if (!target.files || target.files.length === 0) {
+    return
+  }
+
+  const file = target.files[0]
+
+  // Show selected file name
+  attachmentName.value = file.name
+
+  try {
+    // Create unique filename
+    const fileName = `${crypto.randomUUID()}-${file.name}`
+
+    // Upload to Supabase Storage (bucket name MUST match exactly)
+    const { error } = await supabase.storage
+      .from("Attachments")
+      .upload(fileName, file)
+
+    if (error) {
+      throw error
+    }
+
+    // Get public URL
+    const { data } = supabase.storage
+      .from("Attachments")
+      .getPublicUrl(fileName)
+
+    // Save URL
+    form.value.photoUrl = data.publicUrl
+
+    console.log("Upload successful:", data.publicUrl)
+  } catch (error) {
+    console.error("Upload failed:", error)
+
+    attachmentName.value = ""
+    form.value.photoUrl = ""
   }
 }
+
 
 const buildVisitorPayload = () => ({
   fullName: form.value.fullName.trim(),
@@ -55,7 +104,13 @@ const submitVisitForm = async () => {
   try {
     console.log('Submitting visitor payload:', payload)
 
-    const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/visitors`, payload)
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+
+    if (!apiBaseUrl) {
+      throw new Error('Missing required env var: VITE_API_BASE_URL.')
+    }
+
+    const response = await axios.post(`${apiBaseUrl}/visitors`, payload)
 
     if (response?.data) {
       formSubmittedData.value = response.data
@@ -84,6 +139,7 @@ const resetForm = () => {
   showSuccessModal.value = false
   formSubmittedData.value = null
 }
+
 </script>
 
 <template>
@@ -94,10 +150,10 @@ const resetForm = () => {
         <p class="text-sm text-slate-500 mt-1">Create a visitor record now. Visit scheduling can come next.</p>
       </div>
       <button
-        @click="resetForm"
+        @click="handleFileUpload"
         class="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 rounded-lg px-3 py-1.5 shadow-sm hover:bg-slate-50 transition"
       >
-        Clear Form
+        Upload File
       </button>
     </div>
 
