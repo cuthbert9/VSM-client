@@ -150,10 +150,10 @@ const resetForm = () => {
         <p class="text-sm text-slate-500 mt-1">Create a visitor record now. Visit scheduling can come next.</p>
       </div>
       <button
-        @click="handleFileUpload"
+        @click="resetForm"
         class="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 rounded-lg px-3 py-1.5 shadow-sm hover:bg-slate-50 transition"
       >
-        Upload File
+        Reset Form
       </button>
     </div>
 
