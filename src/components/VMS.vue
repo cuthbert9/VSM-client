@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import axios from 'axios'
+import { computed, onMounted, ref } from 'vue'
 
-import { supabase} from "../lib/supabase.ts"
+import FormField from './FormField.vue'
+import { supabase } from '../lib/supabase.ts'
+import {
+  createVisit,
+  createVisitor,
+  getOffices,
+  type Office,
+} from '../Services/visitsService.ts'
 
 const form = ref({
   fullName: '',
@@ -10,70 +16,105 @@ const form = ref({
   nationalId: '',
   company: '',
   vehiclePlate: '',
-  photoUrl: ''
+  photoUrl: '',
 })
 
+const visitForm = ref({
+  visitorId: null as number | null,
+  officeId: '' as string | number,
+  visitDate: '',
+  expectedArrival: '',
+  purpose: '',
+  attachmentUrl: '',
+})
+
+const offices = ref<Office[]>([])
+const isLoadingOffices = ref(false)
+const officesError = ref('')
+
 const isSubmitting = ref(false)
+const isSubmittingVisit = ref(false)
 const showSuccessModal = ref(false)
+const showVisitSuccessModal = ref(false)
 const attachmentName = ref('')
+const visitAttachmentName = ref('')
 const formSubmittedData = ref<any>(null)
+const visitSubmittedData = ref<any>(null)
 const submitError = ref('')
+const visitSubmitError = ref('')
 
+const createdVisitorLabel = computed(() => {
+  const visitor = formSubmittedData.value
+  if (!visitor && !visitForm.value.visitorId) return ''
+  const name = visitor?.fullName || form.value.fullName
+  const id = visitForm.value.visitorId
+  return name ? `${name} (ID: ${id})` : `Visitor ID: ${id}`
+})
 
+const officeOptions = computed(() =>
+  offices.value.map((office) => ({
+    value: office.id,
+    label: String(office.name ?? office.officeName ?? `Office #${office.id}`),
+  }))
+)
 
-// const handleFileUpload = (event: Event) => {
-//   const target = event.target as HTMLInputElement
-//   if (target.files && target.files[0]) {
-//     const file = target.files[0]
-//     attachmentName.value = file.name
-//     form.value.photoUrl = `https://example.com/photos/${encodeURIComponent(file.name)}`
-//   }
-// }
+const officePlaceholder = computed(() =>
+  isLoadingOffices.value ? 'Loading offices...' : 'Select an office'
+)
 
+const toIsoDateTime = (value: string) => {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString()
+}
 
+const uploadAttachment = async (file: File): Promise<string> => {
+  const fileName = `${crypto.randomUUID()}-${file.name}`
+
+  const { error } = await supabase.storage.from('Attachments').upload(fileName, file)
+  if (error) throw error
+
+  const { data } = supabase.storage.from('Attachments').getPublicUrl(fileName)
+  return data.publicUrl
+}
 
 const handleFileUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement
-
-  if (!target.files || target.files.length === 0) {
-    return
-  }
+  if (!target.files || target.files.length === 0) return
 
   const file = target.files[0]
-
-  // Show selected file name
   attachmentName.value = file.name
 
   try {
-    // Create unique filename
-    const fileName = `${crypto.randomUUID()}-${file.name}`
-
-    // Upload to Supabase Storage (bucket name MUST match exactly)
-    const { error } = await supabase.storage
-      .from("Attachments")
-      .upload(fileName, file)
-
-    if (error) {
-      throw error
-    }
-
-    // Get public URL
-    const { data } = supabase.storage
-      .from("Attachments")
-      .getPublicUrl(fileName)
-
-    // Save URL
-    form.value.photoUrl = data.publicUrl
-
-    console.log("Upload successful:", data.publicUrl)
+    form.value.photoUrl = await uploadAttachment(file)
   } catch (error) {
-    console.error("Upload failed:", error)
-
-    attachmentName.value = ""
-    form.value.photoUrl = ""
+    console.error('Upload failed:', error)
+    attachmentName.value = ''
+    form.value.photoUrl = ''
   }
 }
 
+const handleVisitFileUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (!target.files || target.files.length === 0) return
+
+  const file = target.files[0]
+  visitAttachmentName.value = file.name
+
+  try {
+    visitForm.value.attachmentUrl = await uploadAttachment(file)
+  } catch (error) {
+    console.error('Visit attachment upload failed:', error)
+    visitAttachmentName.value = ''
+    visitForm.value.attachmentUrl = ''
+  }
+}
+
+const clearVisitAttachment = () => {
+  visitAttachmentName.value = ''
+  visitForm.value.attachmentUrl = ''
+}
 
 const buildVisitorPayload = () => ({
   fullName: form.value.fullName.trim(),
@@ -81,10 +122,26 @@ const buildVisitorPayload = () => ({
   nationalId: form.value.nationalId.trim(),
   company: form.value.company.trim() || null,
   vehiclePlate: form.value.vehiclePlate.trim() || null,
-  photoUrl: form.value.photoUrl.trim() || null
+  photoUrl: form.value.photoUrl.trim() || null,
 })
 
-const extractErrorMessage = (error: any) => {
+const buildVisitPayload = () => {
+  const visitDate = toIsoDateTime(visitForm.value.visitDate)
+  if (!visitForm.value.visitorId || !visitForm.value.officeId || !visitDate) {
+    throw new Error('Visitor, office, and visit date are required.')
+  }
+
+  return {
+    visitorId: Number(visitForm.value.visitorId),
+    officeId: Number(visitForm.value.officeId),
+    visitDate,
+    expectedArrival: toIsoDateTime(visitForm.value.expectedArrival),
+    purpose: visitForm.value.purpose.trim() || null,
+    attachmentUrl: visitForm.value.attachmentUrl.trim() || null,
+  }
+}
+
+const extractErrorMessage = (error: any, fallback: string) => {
   const responseData = error?.response?.data
 
   if (responseData?.errors && typeof responseData.errors === 'object') {
@@ -93,36 +150,79 @@ const extractErrorMessage = (error: any) => {
       .join(' | ')
   }
 
-  return responseData?.title || responseData?.message || error?.message || 'Failed to register visitor. Try again.'
+  return responseData?.title || responseData?.message || error?.message || fallback
 }
 
-const submitVisitForm = async () => {
+const loadOffices = async () => {
+  isLoadingOffices.value = true
+  officesError.value = ''
+
+  try {
+    offices.value = await getOffices()
+  } catch (error) {
+    officesError.value = extractErrorMessage(error, 'Failed to load offices.')
+  } finally {
+    isLoadingOffices.value = false
+  }
+}
+
+const submitVisitorForm = async () => {
   isSubmitting.value = true
   submitError.value = ''
   const payload = buildVisitorPayload()
 
   try {
-    console.log('Submitting visitor payload:', payload)
+    const data = await createVisitor(payload)
 
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
-
-    if (!apiBaseUrl) {
-      throw new Error('Missing required env var: VITE_API_BASE_URL.')
-    }
-
-    const response = await axios.post(`${apiBaseUrl}/visitors`, payload)
-
-    if (response?.data) {
-      formSubmittedData.value = response.data
+    if (data) {
+      formSubmittedData.value = data
+      visitForm.value.visitorId = data.id ?? data.visitorId ?? null
       showSuccessModal.value = true
     }
   } catch (error) {
-    submitError.value = extractErrorMessage(error)
-    // console.error('Failed to register visitor:', error?.response?.status, error?.response?.data || error)
+    submitError.value = extractErrorMessage(error, 'Failed to register visitor. Try again.')
     alert(submitError.value)
   } finally {
     isSubmitting.value = false
   }
+}
+
+const submitScheduleVisitForm = async () => {
+  if (!visitForm.value.visitorId) {
+    alert('Register a visitor first so the visit can be linked to them.')
+    return
+  }
+
+  isSubmittingVisit.value = true
+  visitSubmitError.value = ''
+
+  try {
+    const payload = buildVisitPayload()
+    const data = await createVisit(payload)
+    visitSubmittedData.value = data
+    showVisitSuccessModal.value = true
+  } catch (error) {
+    visitSubmitError.value = extractErrorMessage(error, 'Failed to schedule visit. Try again.')
+    alert(visitSubmitError.value)
+  } finally {
+    isSubmittingVisit.value = false
+    resetForm()
+  }
+}
+
+const resetVisitForm = () => {
+  visitForm.value = {
+    visitorId: formSubmittedData.value?.id ?? formSubmittedData.value?.visitorId ?? null,
+    officeId: '',
+    visitDate: '',
+    expectedArrival: '',
+    purpose: '',
+    attachmentUrl: '',
+  }
+  visitAttachmentName.value = ''
+  visitSubmitError.value = ''
+  visitSubmittedData.value = null
+  showVisitSuccessModal.value = false
 }
 
 const resetForm = () => {
@@ -132,14 +232,19 @@ const resetForm = () => {
     nationalId: '',
     company: '',
     vehiclePlate: '',
-    photoUrl: ''
+    photoUrl: '',
   }
   attachmentName.value = ''
   submitError.value = ''
   showSuccessModal.value = false
   formSubmittedData.value = null
+  resetVisitForm()
+  visitForm.value.visitorId = null
 }
 
+onMounted(() => {
+  loadOffices()
+})
 </script>
 
 <template>
@@ -147,9 +252,10 @@ const resetForm = () => {
     <div class="flex items-center justify-between pb-5 border-b border-gray-300">
       <div>
         <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Register Visitor</h1>
-        <p class="text-sm text-slate-500 mt-1">Create a visitor record now. Visit scheduling can come next.</p>
+        <p class="text-sm text-slate-500 mt-1">Create a visitor record, then schedule their visit below.</p>
       </div>
       <button
+        type="button"
         @click="resetForm"
         class="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 rounded-lg px-3 py-1.5 shadow-sm hover:bg-slate-50 transition"
       >
@@ -157,7 +263,7 @@ const resetForm = () => {
       </button>
     </div>
 
-    <form @submit.prevent="submitVisitForm" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <form @submit.prevent="submitVisitorForm" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
       <div class="lg:col-span-2 space-y-6">
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
           <div class="flex items-center gap-2 pb-3 border-b border-slate-100">
@@ -165,63 +271,35 @@ const resetForm = () => {
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Full Name *</label>
-              <input
-                v-model="form.fullName"
-                type="text"
-                required
-                placeholder="e.g. Jane Visitor"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Phone *</label>
-              <input
-                v-model="form.phone"
-                type="tel"
-                required
-                placeholder="e.g. 0799993999"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">National ID *</label>
-              <input
-                v-model="form.nationalId"
-                type="text"
-                required
-                placeholder="e.g. NIDA-123456782"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Company / Organization</label>
-              <input
-                v-model="form.company"
-                type="text"
-                placeholder="e.g. Acme Logistics"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Vehicle Plate</label>
-              <input
-                v-model="form.vehiclePlate"
-                type="text"
-                placeholder="e.g. T123ABC"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Photo URL</label>
-              <input
-                v-model="form.photoUrl"
-                type="url"
-                placeholder="https://example.com/photos/jane-visitor.jpg"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
+            <FormField
+              v-model="form.fullName"
+              label="Full Name"
+              required
+              placeholder="e.g. Jane Visitor"
+            />
+            <FormField
+              v-model="form.phone"
+              label="Phone"
+              type="tel"
+              required
+              placeholder="e.g. 0799993999"
+            />
+            <FormField
+              v-model="form.nationalId"
+              label="National ID"
+              required
+              placeholder="e.g. NIDA-123456782"
+            />
+            <FormField
+              v-model="form.company"
+              label="Company / Organization"
+              placeholder="e.g. Acme Logistics"
+            />
+            <FormField
+              v-model="form.vehiclePlate"
+              label="Vehicle Plate"
+              placeholder="e.g. T123ABC"
+            />
           </div>
         </div>
       </div>
@@ -229,20 +307,23 @@ const resetForm = () => {
       <div class="space-y-6">
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
           <div class="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <h2 class="text-lg font-bold text-slate-800">Attachment</h2>
+            <h2 class="text-lg font-bold text-slate-800">Visitor Attachment</h2>
           </div>
 
           <div class="space-y-2">
             <div class="flex items-center justify-center w-full">
               <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition duration-150">
                 <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                  <p class="mb-1 text-sm  text-slate-500"><span class="font-semibold">Click to upload</span> </p>
-                  <p class="text-[10px] text-slate-400">PDF ,JPG, PNG </p>
+                  <p class="mb-1 text-sm text-slate-500"><span class="font-semibold">Click to upload</span></p>
+                  <p class="text-[10px] text-slate-400">PDF, JPG, PNG</p>
                 </div>
-                <input type="file" class="hidden" accept="image/*" @change="handleFileUpload" />
+                <input type="file" class="hidden" accept="image/*,.pdf" @change="handleFileUpload" />
               </label>
             </div>
-            <div v-if="attachmentName" class="flex items-center justify-between text-xs bg-blue-50 text-blue-700 px-3 py-2 rounded-lg border border-blue-100">
+            <div
+              v-if="attachmentName"
+              class="flex items-center justify-between text-xs bg-blue-50 text-blue-700 px-3 py-2 rounded-lg border border-blue-100"
+            >
               <span class="truncate font-medium">{{ attachmentName }}</span>
               <button type="button" @click="attachmentName = ''; form.photoUrl = ''" class="text-blue-500 hover:text-blue-800">✕</button>
             </div>
@@ -262,77 +343,97 @@ const resetForm = () => {
       </div>
     </form>
 
+    <form @submit.prevent="submitScheduleVisitForm" class="space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div class="flex items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <h2 class="text-lg font-bold text-slate-800">Schedule a Visit</h2>
+          <span
+            v-if="visitForm.visitorId"
+            class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-1"
+          >
+            Ready for visitor
+          </span>
+        </div>
 
+        <div
+          v-if="!visitForm.visitorId"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          Register a visitor above first. Their details will prefill here automatically.
+        </div>
 
-    <form  class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div class="lg:col-span-2 space-y-6">
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div class="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <h2 class="text-lg font-bold text-slate-800">Schedule a Visit </h2>
-          </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            class="md:col-span-2"
+            :model-value="createdVisitorLabel || 'No visitor selected yet'"
+            label="Visitor"
+            required
+            readonly
+          />
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Office  *</label>
+          <FormField
+            v-model="visitForm.officeId"
+            label="Office"
+            as="select"
+            required
+            :disabled="isLoadingOffices || !offices.length"
+            :placeholder="officePlaceholder"
+            :options="officeOptions"
+            :error="officesError"
+          />
+
+          <FormField
+            v-model="visitForm.visitDate"
+            label="Visit Date"
+            type="datetime-local"
+            required
+          />
+
+          <FormField
+            v-model="visitForm.expectedArrival"
+            label="Expected Arrival"
+            type="datetime-local"
+          />
+
+          <FormField
+            v-model="visitForm.purpose"
+            label="Visit Purpose"
+            as="textarea"
+            :rows="3"
+            placeholder="Registration follow-up"
+          />
+
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Attachment</label>
+            <div class="flex items-center gap-2">
               <input
-               
-                type="text"
-                required
-                placeholder="e.g. 14rd Floor,Mag"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                type="file"
+                accept="image/*,.pdf"
+                @change="handleVisitFileUpload"
+                class="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700 hover:file:bg-slate-200"
               />
+              <button
+                v-if="visitAttachmentName"
+                type="button"
+                @click="clearVisitAttachment"
+                class="shrink-0 text-xs text-slate-500 hover:text-slate-800"
+              >
+                Clear
+              </button>
             </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Phone *</label>
-              <input
-               
-                type="tel"
-                required
-                placeholder="e.g. 0799993999"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Visit Date  *</label>
-              <input               
-                type="date"
-                required
-                placeholder="e.g. NIDA-123456782"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Expected Arrival </label>
-              <input
-              
-                type="time"
-                placeholder=""
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Visit Purpose </label>
-              <input
-                
-                type="text"
-                placeholder="Registration follow-up"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Photo URL</label>
-              <input
-               
-                type="url"
-                placeholder="https://example.com/photos/jane-visitor.jpg"
-                class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              />
-            </div>
+            <p v-if="visitAttachmentName" class="mt-1 text-xs text-slate-500 truncate">{{ visitAttachmentName }}</p>
           </div>
         </div>
       </div>
 
-    
+      <button
+        type="submit"
+        :disabled="isSubmittingVisit || !visitForm.visitorId"
+        class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-md transition-all transform hover:-translate-y-[1px] disabled:bg-blue-400 disabled:cursor-not-allowed"
+      >
+        <span v-if="isSubmittingVisit" class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+        <span>{{ isSubmittingVisit ? 'Scheduling Visit...' : 'Schedule a Visit' }}</span>
+      </button>
     </form>
 
     <div v-if="showSuccessModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-opacity">
@@ -342,7 +443,7 @@ const resetForm = () => {
             ✓
           </div>
           <h3 class="text-xl font-bold text-slate-900">Visitor Registered Successfully!</h3>
-          <p class="text-sm text-slate-500">The visitor record has been created.</p>
+          <p class="text-sm text-slate-500">You can now schedule a visit for this visitor below.</p>
         </div>
 
         <div v-if="formSubmittedData" class="bg-slate-50 rounded-xl p-4 text-sm space-y-3 border border-slate-100">
@@ -370,13 +471,44 @@ const resetForm = () => {
 
         <div class="mt-6 flex gap-3">
           <button
+            type="button"
             @click="resetForm"
             class="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition"
           >
             Register Another
           </button>
           <button
+            type="button"
             @click="showSuccessModal = false"
+            class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-sm transition"
+          >
+            Schedule Visit
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showVisitSuccessModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-opacity">
+      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 relative transform transition-all scale-100">
+        <div class="text-center space-y-2 mb-6">
+          <div class="mx-auto w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-2xl">
+            ✓
+          </div>
+          <h3 class="text-xl font-bold text-slate-900">Visit Scheduled Successfully!</h3>
+          <p class="text-sm text-slate-500">The visit has been created for this visitor.</p>
+        </div>
+
+        <div class="mt-6 flex gap-3">
+          <button
+            type="button"
+            @click="resetVisitForm"
+            class="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition"
+          >
+            Schedule Another
+          </button>
+          <button
+            type="button"
+            @click="showVisitSuccessModal = false"
             class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-sm transition"
           >
             Close
